@@ -1,0 +1,531 @@
+#Import libraries
+library(dplyr)
+library(ggplot2)
+
+# Import values and assign character type to columns listed below
+df_import <- read.csv(file='Jupiter_Merge_Final_MCfix.csv', colClasses = c(
+"Total.Registered.Voters" = "character",
+"State.Governor" = "character",
+"State.Proposal.1" = "character",
+"US.Senate" = "character",
+"President" = "character"))
+
+# Verify import
+head(df_import)
+A data.frame: 6 × 57
+State Metro.Area County Year Total.Population Bachelor.<fct> <fct> <fct> <int> <int> <dbl> 1 New York Albany-Schenectady-Troy Albany 2020 NA NA 2 New York Allegany 2020 NA NA 3 New York New York City Bronx 2020 NA NA 4 New York Binghamton Broome 2020 NA NA 5 New York Cattaraugus 2020 NA NA 6 New York Cayuga 2020 NA NA 1
+
+# Remove comma from character, convert from character to numeric
+df_import$Total.Registered.Voters <- as.numeric(gsub(",", "", df_import$Total.
+,→Registered.Voters))
+df_import$State.Governor <- as.numeric(gsub(",", "", df_import$State.Governor))
+df_import$State.Proposal.1 <- as.numeric(gsub(",", "", df_import$State.Proposal.
+,→1))
+df_import$US.Senate <- as.numeric(gsub(",", "", df_import$US.Senate))
+df_import$President <- as.numeric(gsub(",", "", df_import$President))
+
+# Assign NA to 0
+df_import$Total.Registered.Voters[is.na(df_import$Total.Registered.Voters)] <- 0
+df_import$State.Governor[is.na(df_import$State.Governor)] <- 0
+df_import$State.Proposal.1[is.na(df_import$State.Proposal.1)] <- 0
+df_import$US.Senate[is.na(df_import$US.Senate)] <- 0
+df_import$President[is.na(df_import$President)] <- 0
+
+# Convert Discharge.Other from integer to numeric
+df_import$Discharge.Other <- as.numeric(df_import$Discharge.Other)
+
+# Compute percent of hospital discharges paid by Medicaid vs all others
+df_import$Discharge.Percent <- df_import$Discharge.Poverty /␣
+,→(df_import$Discharge.Other + df_import$Discharge.Poverty)
+
+# Impute 0 when Medicaid is NA
+df_import$Medicaid[is.na(df_import$Medicaid)] <- 0
+# Impute 0 when Total.Medicaid is NA
+df_import$Total.Population[is.na(df_import$Total.Population)] <- 1
+# Convert Medicaid from integer to numeric
+df_import$Medicaid <- as.numeric(df_import$Medicaid)
+# Convert Total.Discharge from integer to numeric
+df_import$Total.Population <- as.numeric(df_import$Total.Population)
+# Compute percent of Medicaid
+df_import$Medicaid.Percent <- df_import$Medicaid / df_import$Total.Population
+
+# Compute participation percent
+df_import$State.Participation <- (
+df_import$State.Governor + df_import$State.Proposal.1) / df_import$Total.
+,→Population
+df_import$National.Participation <- df_import$President / df_import$Total.
+,→Population
+
+# use national as 2x of state elections as participation
+# Compute participation column
+df_import$Participation <- ifelse(
+df_import$State.Participation > 0, df_import$State.Participation,␣
+,→df_import$National.Participation)
+
+ # Compute percentage of registration based on total population
+df_import$Registration <- df_import$Total.Registered.Voters / df_import$Total.
+,→Population
+
+# Copy dataframe for imputation functions
+df_impute <- df_import
+
+# Average 2014 & 2016 voting participation and insert into 2015
+for (county in levels(df_impute$County)) {
+if (county != "") {
+x = df_impute[df_impute$County==county & df_impute$Year==2014,]
+x<-x[!is.na(x$Participation),]
+y = df_impute[df_impute$County==county & df_impute$Year==2016,]
+y<-y[!is.na(y$Participation),]
+z <- (x$Participation+y$Participation)/2
+df_impute[!is.na(df_impute$County) & df_impute$County==county &␣
+,→df_impute$Year==2015,]$Participation <- z}}
+
+# Average 2010 & 2012 voting participation and insert into 2011
+for (county in levels(df_impute$County)) {
+if (county != "") {
+x = df_impute[df_impute$County==county & df_impute$Year==2010,]
+x<-x[!is.na(x$Participation),]
+y = df_impute[df_impute$County==county & df_impute$Year==2012,]
+y<-y[!is.na(y$Participation),]
+z <- (x$Participation+y$Participation)/2
+df_impute[!is.na(df_impute$County) & df_impute$County==county &␣
+,→df_impute$Year==2011,]$Participation <- z}}
+
+# Average 2010 & 2012 peverty level and insert into 2011
+for (county in levels(df_impute$County)) {
+if (county != "") {
+x = df_impute[df_impute$County==county & df_impute$Year==2010,]
+x<-x[!is.na(x$Poverty.Level),]
+y = df_impute[df_impute$County==county & df_impute$Year==2012,]
+y<-y[!is.na(y$Poverty.Level),]
+z <- (x$Poverty.Level+y$Poverty.Level)/2
+df_impute[!is.na(df_impute$County) & df_impute$County==county &␣
+,→df_impute$Year==2011,]$Poverty.Level <- z}}
+
+# Impute Hospital Discharge from county in same metro area
+df_impute[which(df_impute$County=="Tioga"),"Discharge.Percent"] <- df_impute[
+which(df_impute$County=="Broome"),"Discharge.Percent"]
+
+# Impute Hospital Discharge from county in same metro area
+df_impute[which(df_impute$County=="Washington"),"Discharge.Percent"] <-␣
+,→df_impute[
+which(df_impute$County=="Warren"),"Discharge.Percent"]
+
+# Impute Hospital Discharge from county in same metro area
+df_impute[which(df_impute$County=="Greene"),"Discharge.Percent"] <- df_impute[
+which(df_impute$County=="Delaware"),"Discharge.Percent"]
+
+# Impute Hospital Discharge from county in same metro area
+df_impute[which(df_impute$County=="Hamilton"),"Discharge.Percent"] <- df_impute[
+which(df_impute$County=="Essex"),"Discharge.Percent"]
+
+# Impute Hospital Discharge from county in same metro area
+df_impute[which(df_impute$County=="Seneca"),"Discharge.Percent"] <- df_impute[which(df_impute$County=="Cayuga"),"Discharge.Percent"]
+
+# Impute Hospital Discharge from county in same metro areadf_impute[which(df_impute$County=="New York"),"Discharge.Percent"] <- df_impute[which(df_impute$County=="Bronx"),"Discharge.Percent"]
+
+# Filter for years with data from 2011 to 2017
+df_filter <- subset(df_impute, Year <= 2017 & Year >= 2011)
+
+# Select subset of columns for linear regression
+df <- df_filter %>% select(County, Year,Participation, Registration,Unemployment.Rate, Poverty.Level,Discharge.Percent, Medicaid.Percent)
+
+# Normalize percentages
+df$Participation <- df$Participation * 100
+df$Discharge.Percent <- df$Discharge.Percent * 100
+df$Medicaid.Percent <- df$Medicaid.Percent * 100
+df$Registration <- df$Registration * 100
+
+# Round to 2 decimal places
+df$Participation <- round(df$Participation,2)
+df$Discharge.Percent <- round(df$Discharge.Percent,2)
+df$Medicaid.Percent <- round(df$Medicaid.Percent,2)
+df$Registration <- round(df$Registration,2)
+
+# Export copy of dataframe for other analysis
+write.csv(df, "df_lr_scw.csv")
+
+df_outlier <- df
+
+filter(df_outlier, Participation > 50)
+A data.frame: 9 × 8
+County Year Participation Registration Unemployment.Rate Poverty.Level Discharge.<fct> <int> <dbl> <dbl> <dbl> <dbl> <dbl> Hamilton 2017 60.95 102.46 0.076 12.40 20.88 Columbia 2016 50.80 73.31 0.037 16.10 44.49 Hamilton 2016 70.79 106.50 0.066 13.00 23.50 Saratoga 2016 50.23 73.06 0.038 14.50 25.85 Hamilton 2015 61.78 101.06 0.069 12.90 23.21 Hamilton 2014 52.77 103.91 0.076 13.90 19.75 Hamilton 2013 66.85 102.41 0.097 15.10 20.31 Hamilton 2012 65.00 103.23 0.109 14.60 14.67 Hamilton 2011 59.23 100.62 0.100 13.15 22.55 
+
+filter(df_outlier, Registration > 80)
+A data.frame: 7 × 8
+County Year Participation Registration Unemployment.Rate Poverty.Level Discharge.<fct> <int> <dbl> <dbl> <dbl> <dbl> <dbl> Hamilton 2017 60.95 102.46 0.076 12.40 20.88 Hamilton 2016 70.79 106.50 0.066 13.00 23.50 Hamilton 2015 61.78 101.06 0.069 12.90 23.21 Hamilton 2014 52.77 103.91 0.076 13.90 19.75 Hamilton 2013 66.85 102.41 0.097 15.10 20.31 Hamilton 2012 65.00 103.23 0.109 14.60 14.67 Hamilton 2011 59.23 100.62 0.100 13.15 22.55
+
+df <- filter(df, County != "Hamilton")
+
+df_matrix <- df[, c(3,4,5,6,7,8)]
+
+df_2012 <- filter(df, Year == 2012)
+
+hist(df$Participation,
+main="Voting Participation",
+xlab="Voting Participation",
+border="light blue",
+col="blue",
+las=1,
+breaks=20)
+
+shapiro.test(df$Participation)
+Shapiro-Wilk normality test
+data: df$Participation
+W = 0.97398, p-value = 6.52e-07
+
+hist(df$Registration,
+main="Registration",
+xlab="Registration",
+border="light blue",
+col="blue",las=1,
+breaks=20)
+
+shapiro.test(df$Registration)
+Shapiro-Wilk normality test
+data: df$Registration
+W = 0.98509, p-value = 0.0002247
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Participation ~ Unemployment.Rate + Poverty.Level + Discharge.Percent␣
+,→+ Medicaid.Percent, data=df)
+summary(fit) # show results
+Call:
+lm(formula = Participation ~ Unemployment.Rate + Poverty.Level +
+Discharge.Percent + Medicaid.Percent, data = df)
+Residuals:
+Min 1Q Median 3Q Max
+-16.6093 -6.1043 0.6392 5.2300 17.4119
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 41.80071 2.25492 18.538 < 2e-16 ***
+Unemployment.Rate -1.80085 21.65125 -0.083 0.934
+Poverty.Level 0.08104 0.08956 0.905 0.366
+Discharge.Percent -0.02828 0.04787 -0.591 0.555
+Medicaid.Percent -0.54675 0.08050 -6.792 3.77e-11 ***
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 7.261 on 422 degrees of freedom
+Multiple R-squared: 0.2136,Adjusted R-squared: 0.2061
+F-statistic: 28.65 on 4 and 422 DF, p-value: < 2.2e-16
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Participation ~ Unemployment.Rate + Medicaid.Percent, data=df)
+summary(fit) # show results
+Call:
+lm(formula = Participation ~ Unemployment.Rate + Medicaid.Percent,data = df)
+Residuals:Min 1Q Median 3Q Max
+-16.4082 -5.9802 0.7234 5.0874 17.2618
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 42.64927 1.77058 24.09 <2e-16 ***
+Unemployment.Rate -4.35473 20.76722 -0.21 0.834
+Medicaid.Percent -0.58306 0.05559 -10.49 <2e-16 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 7.256 on 424 degrees of freedom
+Multiple R-squared: 0.211,Adjusted R-squared: 0.2073
+F-statistic: 56.71 on 2 and 424 DF, p-value: < 2.2e-16
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Participation ~ Medicaid.Percent, data=df)
+summary(fit) # show results
+Call:lm(formula = Participation ~ Medicaid.Percent, data = df)
+Residuals:Min 1Q Median 3Q Max-16.404 -5.950 0.716 5.098 17.390
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 42.32567 0.86704 48.82 <2e-16 ***
+Medicaid.Percent -0.58081 0.05449 -10.66 <2e-16 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 7.248 on 425 degrees of freedom
+Multiple R-squared: 0.2109,Adjusted R-squared: 0.2091
+F-statistic: 113.6 on 1 and 425 DF, p-value: < 2.2e-16
+
+# Scatter plot of Participation vs Medicaid Percent
+gg <- ggplot(df, aes(x=Medicaid.Percent,␣,→y=Participation))+geom_point()+geom_abline(
+intercept=43.916, slope=-0.627, color="red", size=1)+ggtitle("Participation␣,
+→to Medicaid Percent")
+print(gg)
+
+# Plot of Residuals
+plot(df$Participation, resid(fit),
+ylab="Residuals", xlab="Participation",
+main="Voting Participation")
+abline(0,0)
+
+# Multiple Linear Regression dependent variable = Registration
+fit <- lm(Registration ~ Unemployment.Rate + Poverty.Level + Discharge.Percent␣
+,→+ Medicaid.Percent, data=df)
+summary(fit) # show results
+Call:
+lm(formula = Registration ~ Unemployment.Rate + Poverty.Level +
+Discharge.Percent + Medicaid.Percent, data = df)
+Residuals:
+Min 1Q Median 3Q Max
+-12.351 -2.571 0.038 2.877 11.020
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 71.20682 1.33884 53.185 < 2e-16 ***
+Unemployment.Rate -113.72829 12.85528 -8.847 < 2e-16 ***
+Poverty.Level 0.19095 0.05317 3.591 0.000368 ***
+Discharge.Percent 0.02922 0.02842 1.028 0.304549
+Medicaid.Percent -0.32255 0.04779 -6.749 4.94e-11 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 4.311 on 422 degrees of freedom
+Multiple R-squared: 0.2525,Adjusted R-squared: 0.2454
+F-statistic: 35.63 on 4 and 422 DF, p-value: < 2.2e-16
+
+# Plot residuals
+plot(df$Registration, resid(fit),
+ylab="Residual", xlab="Predicted Unemployment Rate",
+main="Resduals")
+abline(0,0)
+
+# Plot residuals
+plot(df$Registration, resid(fit),
+ylab="Residual", xlab="Predicted Poverty Level",
+main="Resduals")
+abline(0,0)
+
+# Plot residuals
+plot(df$Registration, resid(fit),
+ylab="Residual", xlab="Predicted Medicaid Percent",
+main="Resduals")
+abline(0,0)
+
+# Multiple Linear Regression dependent variable = Registration
+fit <- lm(Registration ~ Unemployment.Rate + Poverty.Level + Medicaid.Percent,␣
+,→data=df)
+summary(fit) # show results
+Call:
+lm(formula = Registration ~ Unemployment.Rate + Poverty.Level +
+Medicaid.Percent, data = df)
+Residuals:
+Min 1Q Median 3Q Max
+-12.1681 -2.6893 0.0457 2.8246 10.5344
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 71.60914 1.28045 55.925 < 2e-16 ***
+Unemployment.Rate -110.07158 12.35415 -8.910 < 2e-16 ***
+Poverty.Level 0.18257 0.05255 3.474 0.000565 ***
+Medicaid.Percent -0.28707 0.03305 -8.685 < 2e-16 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 4.312 on 423 degrees of freedom
+Multiple R-squared: 0.2506,Adjusted R-squared: 0.2453
+F-statistic: 47.15 on 3 and 423 DF, p-value: < 2.2e-16
+
+# Plot residuals
+plot(df$Registration, resid(fit),
+ylab="Residual", xlab="Predicted Medicaid Percent",
+main="Resduals")
+abline(0,0)
+
+# Plot residuals
+plot(df$Registration, resid(fit),
+ylab="Residual", xlab="Predicted Poverty Level",
+main="Resduals")
+abline(0,0)
+
+# Plot residuals
+plot(df$Registration, resid(fit),
+ylab="Residual", xlab="Predicted Medicaid Percent",
+main="Resduals")
+abline(0,0)
+
+# Aggregate by each county using the mean for each variable
+df_avg <- aggregate(.~County, FUN=mean, data=df)
+
+# Correlation matrix excluding year
+df_matrix <- df_avg[, c(3,4,5,6,7,8)]
+cor(df_matrix)
+A matrix: 6 × 6 of type dbl
+Participation Registration Unemployment.Rate Poverty.Level Participation 1.0000000 0.8138613 -0.50339772 0.15216782 Registration 0.8138613 1.0000000 -0.35462589 0.19254895 Unemployment.Rate -0.5033977 -0.3546259 1.00000000 0.08604898 Poverty.Level 0.1521678 0.1925489 0.08604898 1.00000000 Discharge.Percent -0.5975373 -0.3173617 0.27117068 -0.14587438 Medicaid.Percent -0.7030838 -0.4637758 0.43012813 -0.04568161 
+
+Participation Registration Unemployment.Rate Poverty.Level Participation 1.0000000 0.8138613 -0.50339772 0.15216782 Registration 0.8138613 1.0000000 -0.35462589 0.19254895 Unemployment.Rate -0.5033977 -0.3546259 1.00000000 0.08604898 Poverty.Level 0.1521678 0.1925489 0.08604898 1.00000000 Discharge.Percent -0.5975373 -0.3173617 0.27117068 -0.14587438 Medicaid.Percent -0.7030838 -0.4637758 0.43012813 -0.04568161
+
+[53]: hist(df_avg$Participation,
+main="Voting Participation",
+xlab="Voting Participation",
+border="light blue",
+col="blue",
+las=1,
+breaks=10)
+
+shapiro.test(df_avg$Participation)
+Shapiro-Wilk normality test
+data: df_avg$Participation
+W = 0.91331, p-value = 0.0003717
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Participation ~ Unemployment.Rate + Poverty.Level + Discharge.Percent␣
+,→+ Medicaid.Percent, data=df_avg)
+summary(fit) # show results
+Call:
+lm(formula = Participation ~ Unemployment.Rate + Poverty.Level +
+Discharge.Percent + Medicaid.Percent, data = df_avg)
+Residuals:
+Min 1Q Median 3Q Max
+-7.656 -1.636 -0.409 1.636 6.140
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 47.08944 3.29159 14.306 < 2e-16 ***
+Unemployment.Rate -125.13802 44.97022 -2.783 0.00734 **
+Poverty.Level 0.16180 0.10535 1.536 0.13022
+Discharge.Percent -0.04356 0.06232 -0.699 0.48743
+Medicaid.Percent -0.38591 0.12471 -3.094 0.00308 **
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 2.916 on 56 degrees of freedom
+Multiple R-squared: 0.5693,Adjusted R-squared: 0.5386
+F-statistic: 18.51 on 4 and 56 DF, p-value: 9.654e-10
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Participation ~ Unemployment.Rate + Medicaid.Percent, data=df_avg)
+summary(fit) # show results
+Call:
+lm(formula = Participation ~ Unemployment.Rate + Medicaid.Percent,
+data = df_avg)
+Residuals:
+Min 1Q Median 3Q Max
+-7.6658 -1.8271 0.1586 1.7939 6.1193
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 48.18253 2.73501 17.617 < 2e-16 ***
+Unemployment.Rate -112.54290 44.82896 -2.510 0.0149 *
+Medicaid.Percent -0.46666 0.07678 -6.078 1.01e-07 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 2.949 on 58 degrees of freedom
+Multiple R-squared: 0.5439,Adjusted R-squared: 0.5282
+F-statistic: 34.58 on 2 and 58 DF, p-value: 1.297e-10
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Participation ~ Medicaid.Percent, data=df_avg)
+summary(fit) # show results
+Call:
+lm(formula = Participation ~ Medicaid.Percent, data = df_avg)
+Residuals:
+Min 1Q Median 3Q Max
+-9.4555 -1.6572 -0.1865 2.2354 7.6365
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 41.87114 1.12443 37.238 < 2e-16 ***
+Medicaid.Percent -0.54958 0.07237 -7.594 2.66e-10 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 3.078 on 59 degrees of freedom
+Multiple R-squared: 0.4943,Adjusted R-squared: 0.4858
+F-statistic: 57.68 on 1 and 59 DF, p-value: 2.66e-10
+
+# Scatter plot of Participation vs Medicaid Percent
+gg <- ggplot(df_avg, aes(x=Medicaid.Percent,␣
+,→y=Participation))+geom_point()+geom_abline(
+intercept=42.97686, slope=-0.56883, color="red",␣
+,→size=1)+ggtitle("Participation to Medicaid Percent")
+print(gg)
+
+# Plot residuals
+plot(df_avg$Participation, resid(fit),
+ylab="Residuals", xlab="Participation",
+main="Voting Participation")
+abline(0,0)
+
+hist(df_avg$Registration,
+main="Registration",
+xlab="Registration",
+border="light blue",
+col="blue",
+las=1,
+breaks=10)
+
+shapiro.test(df_avg$Registration)
+Shapiro-Wilk normality test
+data: df_avg$Registration
+W = 0.97208, p-value = 0.1765
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Registration ~ Unemployment.Rate + Poverty.Level + Discharge.Percent␣
+,→+ Medicaid.Percent, data=df_avg)
+summary(fit) # show results
+Call:
+lm(formula = Registration ~ Unemployment.Rate + Poverty.Level +
+Discharge.Percent + Medicaid.Percent, data = df_avg)
+Residuals:
+Min 1Q Median 3Q Max
+-8.5520 -1.9102 -0.4794 2.0304 8.1600
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 68.96697 4.61709 14.937 <2e-16 ***
+Unemployment.Rate -100.55919 63.07945 -1.594 0.1165
+Poverty.Level 0.27368 0.14777 1.852 0.0693 .
+Discharge.Percent 0.08178 0.08741 0.936 0.3535
+Medicaid.Percent -0.43940 0.17493 -2.512 0.0149 *
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 4.09 on 56 degrees of freedom
+Multiple R-squared: 0.2929,Adjusted R-squared: 0.2424
+F-statistic: 5.8 on 4 and 56 DF, p-value: 0.0005609
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Registration ~ Poverty.Level + Medicaid.Percent, data=df_avg)
+summary(fit) # show results
+Call:
+lm(formula = Registration ~ Poverty.Level + Medicaid.Percent,
+data = df_avg)
+Residuals:
+Min 1Q Median 3Q Max
+-10.3135 -1.9201 -0.1584 2.0157 7.5614
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 65.20982 2.64486 24.655 < 2e-16 ***
+Poverty.Level 0.22076 0.14688 1.503 0.138254
+Medicaid.Percent -0.39014 0.09776 -3.991 0.000187 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 4.154 on 58 degrees of freedom
+Multiple R-squared: 0.2445,Adjusted R-squared: 0.2185
+F-statistic: 9.386 on 2 and 58 DF, p-value: 0.0002941
+
+# Multiple Linear Regression dependent variable = Participation
+fit <- lm(Registration ~ Poverty.Level + Medicaid.Percent, data=df_avg)
+summary(fit) # show results
+Call:
+lm(formula = Registration ~ Poverty.Level + Medicaid.Percent,
+data = df_avg)
+Residuals:
+Min 1Q Median 3Q Max
+-10.3135 -1.9201 -0.1584 2.0157 7.5614
+Coefficients:
+Estimate Std. Error t value Pr(>|t|)
+(Intercept) 65.20982 2.64486 24.655 < 2e-16 ***
+Poverty.Level 0.22076 0.14688 1.503 0.138254
+Medicaid.Percent -0.39014 0.09776 -3.991 0.000187 ***
+---
+Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 4.154 on 58 degrees of freedom
+Multiple R-squared: 0.2445,Adjusted R-squared: 0.2185
+F-statistic: 9.386 on 2 and 58 DF, p-value: 0.0002941
+
+# Scatter plot of Registration vs Medicaid Percent
+gg <- ggplot(df_avg, aes(x=Medicaid.Percent,␣
+,→y=Registration))+geom_point()+geom_abline(
+intercept=65.94876, slope=-0.39371, color="red",␣
+,→size=1)+ggtitle("Registration to Medicaid Percent")
+print(gg)
+
+# Plot residuals
+plot(df_avg$Registration, resid(fit),
+ylab="Residuals", xlab="Registration",
+main="Voting Registration")
+abline(0,0)
+
+# Aggregate by Year using the mean for each variable
+df_year <- aggregate(.~Year, FUN=mean, data=df)
+
+# Line plot of Medicaid Percent Annually
+gg <- ggplot(df_year, aes(x=Year, y=Medicaid.Percent))+geom_point()+geom_line()
+print(gg)
+
+
